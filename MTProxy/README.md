@@ -4,11 +4,8 @@
 
 
 <p align="center">
-
 <a href="https://hub.docker.com/r/deercloud/mtproxy/"><img src="https://img.shields.io/docker/pulls/deercloud/mtproxy.svg?style=for-the-badge"></a>
-
 <a href="https://hub.docker.com/r/deercloud/mtproxy/"><img src="https://img.shields.io/docker/build/deercloud/mtproxy.svg?style=for-the-badge"></a>
-
 <img alt="License" src="https://img.shields.io/github/license/deercloud/dockerfile.svg?style=for-the-badge"/>
 </p>
 
