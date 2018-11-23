@@ -1,0 +1,511 @@
+From ea13062f6a6ca7e48df9239ec193ee8a749aad55 Mon Sep 17 00:00:00 2001
+From: metowolf <i@i-meto.com>
+Date: Fri, 23 Nov 2018 18:15:00 +0800
+Subject: [PATCH 1/2] patch: randr_compat
+
+---
+ Makefile                  |   1 +
+ common/randr_compat.c     | 120 ++++++++++++++++++++++++++++++++++++++
+ common/randr_compat.h     |  72 +++++++++++++++++++++++
+ common/server-functions.c |   4 ++
+ engine/engine.c           |  60 +++++++++----------
+ jobs/jobs.h               |   2 +
+ 6 files changed, 229 insertions(+), 30 deletions(-)
+ create mode 100644 common/randr_compat.c
+ create mode 100644 common/randr_compat.h
+
+diff --git a/Makefile b/Makefile
+index 67e6771..5204dc7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -40,6 +40,7 @@ DEPENDENCE_STRANGE	:=	$(subst ${OBJ}/,${DEP}/,$(patsubst %.o,%.d,${OBJECTS_STRAN
+ DEPENDENCE_NORM	:=	$(subst ${OBJ}/,${DEP}/,$(patsubst %.o,%.d,${OBJECTS}))
+ 
+ LIB_OBJS_NORMAL := \
++	${OBJ}/common/randr_compat.o \
+ 	${OBJ}/common/crc32c.o \
+ 	${OBJ}/common/pid.o \
+ 	${OBJ}/common/sha1.o \
+diff --git a/common/randr_compat.c b/common/randr_compat.c
+new file mode 100644
+index 0000000..58ef6f1
+--- /dev/null
++++ b/common/randr_compat.c
+@@ -0,0 +1,120 @@
++/*
++    The GNU C Library is free software.  See the file COPYING.LIB for copying
++    conditions, and LICENSES for notices about a few contributions that require
++    these additional notices to be distributed.  License copyright years may be
++    listed using range notation, e.g., 2000-2011, indicating that every year in
++    the range, inclusive, is a copyrightable year that would otherwise be listed
++    individually.
++*/
++
++#include <stddef.h>
++#include "common/randr_compat.h"
++
++int __drand48_iterate (unsigned short int xsubi[3], struct drand48_data *buffer) {
++    uint64_t X;
++    uint64_t result;
++
++    /* Initialize buffer, if not yet done.  */
++    if (!buffer->__init == 0)
++    {
++        buffer->__a = 0x5deece66dull;
++        buffer->__c = 0xb;
++        buffer->__init = 1;
++    }
++
++    /* Do the real work.  We choose a data type which contains at least
++       48 bits.  Because we compute the modulus it does not care how
++       many bits really are computed.  */
++
++    X = (uint64_t) xsubi[2] << 32 | (uint32_t) xsubi[1] << 16 | xsubi[0];
++
++    result = X * buffer->__a + buffer->__c;
++
++    xsubi[0] = result & 0xffff;
++    xsubi[1] = (result >> 16) & 0xffff;
++    xsubi[2] = (result >> 32) & 0xffff;
++
++    return 0;
++}
++
++int __erand48_r (unsigned short int xsubi[3], struct drand48_data *buffer, double *result) {
++    union ieee754_double temp;
++
++    /* Compute next state.  */
++    if (__drand48_iterate (xsubi, buffer) < 0)
++        return -1;
++
++    /* Construct a positive double with the 48 random bits distributed over
++       its fractional part so the resulting FP number is [0.0,1.0).  */
++
++    temp.ieee.negative = 0;
++    temp.ieee.exponent = IEEE754_DOUBLE_BIAS;
++    temp.ieee.mantissa0 = (xsubi[2] << 4) | (xsubi[1] >> 12);
++    temp.ieee.mantissa1 = ((xsubi[1] & 0xfff) << 20) | (xsubi[0] << 4);
++
++    /* Please note the lower 4 bits of mantissa1 are always 0.  */
++    *result = temp.d - 1.0;
++
++    return 0;
++}
++
++int __nrand48_r (unsigned short int xsubi[3], struct drand48_data *buffer, long int *result) {
++    /* Compute next state.  */
++    if (__drand48_iterate (xsubi, buffer) < 0)
++        return -1;
++
++    /* Store the result.  */
++    if (sizeof (unsigned short int) == 2)
++        *result = xsubi[2] << 15 | xsubi[1] >> 1;
++    else
++        *result = xsubi[2] >> 1;
++
++    return 0;
++}
++
++int __jrand48_r (unsigned short int xsubi[3], struct drand48_data *buffer, long int *result) {
++    /* Compute next state.  */
++    if (__drand48_iterate (xsubi, buffer) < 0)
++        return -1;
++
++    /* Store the result.  */
++    *result = (int32_t) ((xsubi[2] << 16) | xsubi[1]);
++
++    return 0;
++}
++
++int drand48_r (struct drand48_data *buffer, double *result) {
++    return __erand48_r (buffer->__x, buffer, result);
++}
++
++int lrand48_r (struct drand48_data *buffer, long int *result) {
++    /* Be generous for the arguments, detect some errors.  */
++    if (buffer == NULL)
++        return -1;
++
++    return __nrand48_r (buffer->__x, buffer, result);
++}
++
++int mrand48_r (struct drand48_data *buffer, long int *result) {
++    /* Be generous for the arguments, detect some errors.  */
++    if (buffer == NULL)
++        return -1;
++
++    return __jrand48_r (buffer->__x, buffer, result);
++}
++
++int srand48_r (long int seedval, struct drand48_data *buffer) {
++    /* The standards say we only have 32 bits.  */
++    if (sizeof (long int) > 4)
++        seedval &= 0xffffffffl;
++
++    buffer->__x[2] = seedval >> 16;
++    buffer->__x[1] = seedval & 0xffffl;
++    buffer->__x[0] = 0x330e;
++
++    buffer->__a = 0x5deece66dull;
++    buffer->__c = 0xb;
++    buffer->__init = 1;
++
++    return 0;
++}
+\ No newline at end of file
+diff --git a/common/randr_compat.h b/common/randr_compat.h
+new file mode 100644
+index 0000000..7fed1e9
+--- /dev/null
++++ b/common/randr_compat.h
+@@ -0,0 +1,72 @@
++/*
++    The GNU C Library is free software.  See the file COPYING.LIB for copying
++    conditions, and LICENSES for notices about a few contributions that require
++    these additional notices to be distributed.  License copyright years may be
++    listed using range notation, e.g., 2000-2011, indicating that every year in
++    the range, inclusive, is a copyrightable year that would otherwise be listed
++    individually.
++*/
++
++#pragma once
++
++#include <endian.h>
++#include <pthread.h>
++
++struct drand48_data {
++    unsigned short int __x[3];	/* Current state.  */
++    unsigned short int __old_x[3]; /* Old state.  */
++    unsigned short int __c;	/* Additive const. in congruential formula.  */
++    unsigned short int __init;	/* Flag for initializing.  */
++    unsigned long long int __a;	/* Factor in congruential formula.  */
++};
++
++union ieee754_double
++{
++    double d;
++
++    /* This is the IEEE 754 double-precision format.  */
++    struct
++    {
++#if	__BYTE_ORDER == __BIG_ENDIAN
++        unsigned int negative:1;
++        unsigned int exponent:11;
++        /* Together these comprise the mantissa.  */
++        unsigned int mantissa0:20;
++        unsigned int mantissa1:32;
++#endif				/* Big endian.  */
++#if	__BYTE_ORDER == __LITTLE_ENDIAN
++        /* Together these comprise the mantissa.  */
++        unsigned int mantissa1:32;
++        unsigned int mantissa0:20;
++        unsigned int exponent:11;
++        unsigned int negative:1;
++#endif				/* Little endian.  */
++    } ieee;
++
++    /* This format makes it easier to see if a NaN is a signalling NaN.  */
++    struct
++    {
++#if	__BYTE_ORDER == __BIG_ENDIAN
++        unsigned int negative:1;
++        unsigned int exponent:11;
++        unsigned int quiet_nan:1;
++        /* Together these comprise the mantissa.  */
++        unsigned int mantissa0:19;
++        unsigned int mantissa1:32;
++#else
++        /* Together these comprise the mantissa.  */
++        unsigned int mantissa1:32;
++        unsigned int mantissa0:19;
++        unsigned int quiet_nan:1;
++        unsigned int exponent:11;
++        unsigned int negative:1;
++#endif
++    } ieee_nan;
++};
++
++#define IEEE754_DOUBLE_BIAS	0x3ff /* Added to exponent.  */
++
++int drand48_r (struct drand48_data *buffer, double *result);
++int lrand48_r (struct drand48_data *buffer, long int *result);
++int mrand48_r (struct drand48_data *buffer, long int *result);
++int srand48_r (long int seedval, struct drand48_data *buffer);
+\ No newline at end of file
+diff --git a/common/server-functions.c b/common/server-functions.c
+index 3d852ff..1d2bf6e 100644
+--- a/common/server-functions.c
++++ b/common/server-functions.c
+@@ -35,7 +35,9 @@
+ #include <arpa/inet.h>
+ #include <assert.h>
+ #include <errno.h>
++#ifdef __GLIBC__
+ #include <execinfo.h>
++#endif
+ #include <fcntl.h>
+ #include <getopt.h>
+ #include <grp.h>
+@@ -168,6 +170,7 @@ const char *get_version_string (void) {
+ }
+ 
+ void print_backtrace (void) {
++#ifdef __GLIBC__
+   void *buffer[64];
+   int nptrs = backtrace (buffer, 64);
+   kwrite (2, "\n------- Stack Backtrace -------\n", 33);
+@@ -178,6 +181,7 @@ void print_backtrace (void) {
+     kwrite (2, s, strlen (s));
+     kwrite (2, "\n", 1);
+   }
++#endif
+ }
+ 
+ pthread_t debug_main_pthread_id;
+diff --git a/engine/engine.c b/engine/engine.c
+index 73c8745..a73df5b 100644
+--- a/engine/engine.c
++++ b/engine/engine.c
+@@ -17,12 +17,12 @@
+     Copyright 2013 Vkontakte Ltd
+               2013 Vitaliy Valtman
+               2013 Anton Maydell
+-    
+-    Copyright 2014 Telegram Messenger Inc             
+-              2014 Vitaly Valtman     
++
++    Copyright 2014 Telegram Messenger Inc
++              2014 Vitaly Valtman
+               2014 Anton Maydell
+-    
+-    Copyright 2015-2016 Telegram Messenger Inc             
++
++    Copyright 2015-2016 Telegram Messenger Inc
+               2015-2016 Vitaliy Valtman
+ */
+ 
+@@ -194,7 +194,7 @@ static void raise_file_limit (int maxconn) /* {{{ */ {
+ }
+ /* }}} */
+ 
+-/* {{{ engine_init */ 
++/* {{{ engine_init */
+ 
+ void engine_init (const char *const pwd_filename, int do_not_open_port) {
+   engine_t *E = engine_state;
+@@ -222,7 +222,7 @@ void engine_init (const char *const pwd_filename, int do_not_open_port) {
+     E->port = try_open_port_range (E->start_port, E->end_port, 100, get_port_mod (), 1);
+     assert (E->port >= 0);
+   }
+-  
++
+   unsigned int ipv4 = 0;
+ 
+   if (E->settings_addr.s_addr) {
+@@ -237,7 +237,7 @@ void engine_init (const char *const pwd_filename, int do_not_open_port) {
+   init_msg_buffers (0);
+ 
+   init_async_jobs ();
+-  
++
+   int nc;
+   nc = engine_get_required_io_threads ();
+   if (nc <= 0) {
+@@ -249,7 +249,7 @@ void engine_init (const char *const pwd_filename, int do_not_open_port) {
+     nc = DEFAULT_CPU_JOB_THREADS;
+   }
+   create_new_job_class (JC_CPU, nc, nc);
+-  
++
+   if (engine_check_multithread_enabled ()) {
+     int nc;
+     nc = engine_get_required_tcp_cpu_threads ();
+@@ -268,7 +268,7 @@ void engine_init (const char *const pwd_filename, int do_not_open_port) {
+   create_main_thread_pipe ();
+   alloc_timer_manager (JC_EPOLL);
+   notification_event_job_create ();
+-  
++
+   kprintf ("Started as " PID_PRINT_STR "\n", PID_TO_PRINT (&PID));
+ }
+ /* }}} */
+@@ -279,7 +279,7 @@ void server_init (conn_type_t *listen_connection_type, void *listen_connection_e
+   assert (F && "server functions aren't defined");
+ 
+   init_epoll ();
+-  
++
+   epoll_sethandler (pipe_read_end, 0, epoll_nop, NULL);
+   epoll_insert (pipe_read_end, EVT_READ | EVT_LEVEL);
+ 
+@@ -296,7 +296,7 @@ void server_init (conn_type_t *listen_connection_type, void *listen_connection_e
+     if (E->sfd <= 0) {
+       assert (try_open_port (E->port, 1) >= 0);
+     }
+-      
++
+     if (engine_check_tcp_enabled ()) {
+       if (!engine_check_ipv6_enabled ()) {
+         assert (init_listening_connection (E->sfd, listen_connection_type, listen_connection_extra) >= 0);
+@@ -304,7 +304,7 @@ void server_init (conn_type_t *listen_connection_type, void *listen_connection_e
+         assert (init_listening_tcpv6_connection (E->sfd, listen_connection_type, listen_connection_extra, SM_IPV6) >= 0);
+       }
+     }
+-    
++
+   }
+ 
+   ksignal (SIGINT,  sigint_handler);
+@@ -321,7 +321,7 @@ void server_init (conn_type_t *listen_connection_type, void *listen_connection_e
+ void server_exit (void) /* {{{ */ {
+   engine_t *E = engine_state;
+   server_functions_t *F = E->F;
+-  
++
+   F->close_net_sockets ();
+ 
+   if (signal_check_pending (SIGTERM)) {
+@@ -332,7 +332,7 @@ void server_exit (void) /* {{{ */ {
+ }
+ /* }}} */
+ 
+-/* {{{ precise cron */ 
++/* {{{ precise cron */
+ 
+ struct event_precise_cron precise_cron_events = {
+   .next = &precise_cron_events,
+@@ -355,17 +355,17 @@ static void do_precise_cron (void) {
+   engine_t *E = engine_state;
+   server_functions_t *F = E->F;
+   engine_process_signals ();
+-  
++
+   static int last_cron_time;
+   if (last_cron_time != now) {
+     last_cron_time = now;
+     F->cron ();
+   }
+-  
++
+   if (F->precise_cron) {
+     F->precise_cron ();
+   }
+-  
++
+   if (precise_cron_events.next != &precise_cron_events) {
+     struct event_precise_cron ev = precise_cron_events;
+     ev.next->prev = &ev;
+@@ -406,7 +406,7 @@ int precise_cron_job_run (job_t job, int op, struct job_thread *JT) /* {{{ */ {
+   job_timer_insert (job, precise_now + 0.001 * (1 + drand48_j ()));
+   return 0;
+ }
+-/* }}} */ 
++/* }}} */
+ 
+ int terminate_job_run (job_t job, int op, struct job_thread *JT) {
+   if (op == JS_RUN) {
+@@ -457,7 +457,7 @@ void default_engine_server_start (void) /* {{{ */ {
+   int i;
+   vkprintf (0, "main loop\n");
+   for (i = 0; ; i++) {
+-    epoll_work (engine_check_multithread_enabled () ? E->epoll_wait_timeout : 1);
++    epoll_work (engine_check_multithread_enabled () ? E->epoll_wait_timeout : DEFAULT_EPOLL_WAIT_TIMEOUT);
+     if (interrupt_signal_raised ()) {
+       if (F->on_waiting_exit) {
+         while (1) {
+@@ -475,7 +475,7 @@ void default_engine_server_start (void) /* {{{ */ {
+       }
+       break;
+     }
+-    
++
+     run_pending_main_jobs ();
+   }
+   sleep (120);
+@@ -549,15 +549,15 @@ static void check_server_functions (void) /* {{{ */ {
+   if (!F->parse_extra_args) { F->parse_extra_args = default_parse_extra_args; }
+   if (!F->pre_loop) { F->pre_loop = default_nop; }
+ 
+-  if (!F->epoll_timeout) { F->epoll_timeout = 1; }
++  if (!F->epoll_timeout) { F->epoll_timeout = DEFAULT_EPOLL_WAIT_TIMEOUT; }
+   if (!F->aio_timeout) { F->aio_timeout = 0.5; }
+ 
+   if (!F->get_op) { F->get_op = default_get_op; }
+-  
++
+   int i;
+   for (i = 1; i <= 64; i++) {
+     if (F->allowed_signals & SIG2INT (i)) {
+-      //fix log spamming hack for image-engine: 
++      //fix log spamming hack for image-engine:
+       ksignal (i, i == SIGCHLD ? quiet_signal_handler : default_signal_handler);
+     }
+   }
+@@ -575,16 +575,17 @@ void engine_startup (engine_t *E, server_functions_t *F) /* {{{ */ {
+ 
+   assert (SIGRTMAX == OUR_SIGRTMAX);
+   assert (SIGRTMAX - SIGRTMIN >= 20);
+-  
++
+   E->sfd = 0;
+   E->epoll_wait_timeout = DEFAULT_EPOLL_WAIT_TIMEOUT;
+   E->maxconn = MAX_CONNECTIONS;
+ 
+   check_server_functions ();
+ }
+-/* }}} */ 
++/* }}} */
+ 
+ int default_main (server_functions_t *F, int argc, char *argv[]) {
++  F->epoll_timeout = DEFAULT_EPOLL_WAIT_TIMEOUT;
+   set_signals_handlers ();
+ 
+   engine_t *E = calloc (sizeof (*E), 1);
+@@ -615,7 +616,7 @@ int default_main (server_functions_t *F, int argc, char *argv[]) {
+   add_builtin_parse_options ();
+ 
+   F->prepare_parse_options ();
+-  
++
+   parse_engine_options_long (argc, argv);
+ 
+   F->parse_extra_args (argc - optind, argv + optind);
+@@ -629,7 +630,7 @@ int default_main (server_functions_t *F, int argc, char *argv[]) {
+   vkprintf (3, "Command line parsed\n");
+ 
+   F->pre_start ();
+-  
++
+   start_time = time (NULL);
+ 
+   if (F->run_script) {
+@@ -648,7 +649,7 @@ int default_main (server_functions_t *F, int argc, char *argv[]) {
+   return 0;
+ }
+ 
+-    
++
+ static int f_parse_option_engine (int val) {
+   switch (val) {
+     case 227:
+@@ -718,4 +719,3 @@ int default_parse_option_func (int a) {
+     return -1;
+   }
+ }
+-
+diff --git a/jobs/jobs.h b/jobs/jobs.h
+index 56522e5..bcfe7a5 100644
+--- a/jobs/jobs.h
++++ b/jobs/jobs.h
+@@ -28,6 +28,8 @@
+ #include "net/net-msg.h"
+ #include "net/net-timers.h"
+ 
++#include "common/randr_compat.h"
++
+ #define __joblocked
+ #define __jobref
+ 
+-- 
+2.17.2 (Apple Git-113)
+

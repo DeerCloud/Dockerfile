@@ -64,12 +64,14 @@ echo ""
 sleep 1
 
 mtproto-proxy \
+  --slaves $SLAVES \
   --user nobody \
   --port 8888 \
   --http-ports 443 \
-  --mtproto-secret ${SECRET} \
-  --proxy-tag ${TAG} \
+  --mtproto-secret $SECRET \
+  --proxy-tag $TAG \
   --address 0.0.0.0 \
   --nat-info "${LOCAL_ADDR}:${GLOBAL_ADDR}" \
   --aes-pwd ${MTPROXY_CONFIG_PATH}/proxy-secret \
-  ${MTPROXY_CONFIG_PATH}/proxy-multi.conf
+  ${MTPROXY_CONFIG_PATH}/proxy-multi.conf \
+  $ARGS

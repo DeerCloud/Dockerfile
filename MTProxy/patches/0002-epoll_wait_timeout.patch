@@ -1,0 +1,56 @@
+From 85a94fdff448960b6ecae013ec681f9c778f7b87 Mon Sep 17 00:00:00 2001
+From: metowolf <i@i-meto.com>
+Date: Fri, 23 Nov 2018 18:30:44 +0800
+Subject: [PATCH 2/2] epoll_wait_timeout
+
+---
+ engine/engine.c  | 5 ++---
+ net/net-events.c | 2 +-
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/engine/engine.c b/engine/engine.c
+index a73df5b..32d2087 100644
+--- a/engine/engine.c
++++ b/engine/engine.c
+@@ -457,7 +457,7 @@ void default_engine_server_start (void) /* {{{ */ {
+   int i;
+   vkprintf (0, "main loop\n");
+   for (i = 0; ; i++) {
+-    epoll_work (engine_check_multithread_enabled () ? E->epoll_wait_timeout : DEFAULT_EPOLL_WAIT_TIMEOUT);
++    epoll_work (engine_check_multithread_enabled () ? E->epoll_wait_timeout : 1);
+     if (interrupt_signal_raised ()) {
+       if (F->on_waiting_exit) {
+         while (1) {
+@@ -549,7 +549,7 @@ static void check_server_functions (void) /* {{{ */ {
+   if (!F->parse_extra_args) { F->parse_extra_args = default_parse_extra_args; }
+   if (!F->pre_loop) { F->pre_loop = default_nop; }
+ 
+-  if (!F->epoll_timeout) { F->epoll_timeout = DEFAULT_EPOLL_WAIT_TIMEOUT; }
++  if (!F->epoll_timeout) { F->epoll_timeout = 1; }
+   if (!F->aio_timeout) { F->aio_timeout = 0.5; }
+ 
+   if (!F->get_op) { F->get_op = default_get_op; }
+@@ -585,7 +585,6 @@ void engine_startup (engine_t *E, server_functions_t *F) /* {{{ */ {
+ /* }}} */
+ 
+ int default_main (server_functions_t *F, int argc, char *argv[]) {
+-  F->epoll_timeout = DEFAULT_EPOLL_WAIT_TIMEOUT;
+   set_signals_handlers ();
+ 
+   engine_t *E = calloc (sizeof (*E), 1);
+diff --git a/net/net-events.c b/net/net-events.c
+index 1a14377..47cc678 100644
+--- a/net/net-events.c
++++ b/net/net-events.c
+@@ -411,7 +411,7 @@ int epoll_work (int timeout) {
+ 
+   double epoll_wait_start = get_utime_monotonic ();
+ 
+-  epoll_fetch_events (1);
++  epoll_fetch_events (timeout);
+ 
+   last_epoll_wait_at = get_utime_monotonic ();
+   double epoll_wait_time = last_epoll_wait_at - epoll_wait_start;
+-- 
+2.17.2 (Apple Git-113)
+

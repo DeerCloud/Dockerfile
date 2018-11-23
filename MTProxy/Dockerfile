@@ -17,7 +17,9 @@ RUN apk upgrade \
         openssl-dev \
     && git clone ${MTPROXY_GIT_URL} MTProxy -b ${MTPROXY_GIT_VERSION} -c advice.detachedHead=false \
     && cd MTProxy \
-    && patch -p0 -i /patches/randr_compat.patch \
+    && git config --global user.email "i@i-meto.com" \
+    && git config --global user.name "metowolf" \
+    && git am /patches/*.patch \
     && make
 
 
@@ -28,6 +30,12 @@ LABEL maintainer="metowolf <i@i-meto.com>"
 ENV MTPROXY_CONFIG_PATH /etc/mtproxy
 ENV MTPROXY_CONFIG_DOWNLOAD_URL https://core.telegram.org/getProxyConfig
 ENV MTPROXY_SECRET_DOWNLOAD_URL https://core.telegram.org/getProxySecret
+ENV SLAVES 1
+ENV SECRET=
+ENV TAG=
+ENV LOCAL_ADDR=
+ENV GLOBAL_ADDR=
+ENV ARGS=
 
 RUN apk add --no-cache curl \
     && ln -s /usr/lib/libcrypto.so.43 /usr/lib/libcrypto.so.1.0.0 \
